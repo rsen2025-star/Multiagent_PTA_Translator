@@ -1,0 +1,43 @@
+
+// ---------------------------------------------------------------------
+// 1. LIVENESS / PROGRESS  — does the system move at all?
+// ---------------------------------------------------------------------
+
+// Can the train ever reach location 'in'?  Pmin<1 (or 0) signals a
+// scheduler that deadlocks before the train completes a cycle (F3).
+"train_reaches_in_min" : Pmin=? [ F state_position=2 ];
+"train_reaches_in_max" : Pmax=? [ F state_position=2 ];
+
+// Can the gate ever reach location 'down'?
+"gate_reaches_down_min" : Pmin=? [ F state_gate_position=2 ];
+"gate_reaches_down_max" : Pmax=? [ F state_gate_position=2 ];
+
+// Does the controller ever return to state 0 (complete one round)?
+"controller_returns_to_0_min" : Pmin=? [ F state_ctrl_state=0 & t>0 ];
+
+// ---------------------------------------------------------------------
+// 2. DEADLOCK  — the F3 symptom, made explicit
+// ---------------------------------------------------------------------
+
+// Probability of reaching a deadlocked state. Pmax>0 confirms F3:
+// controller's synthetic clock t<=1 cannot wait train's 7-tick sync.
+"deadlock_reachable" : Pmax=? [ F "deadlock" ];
+"deadlock_certain"   : Pmin=? [ F "deadlock" ];
+
+// ---------------------------------------------------------------------
+// 3. SAFETY  — the real train-gate requirement
+// ---------------------------------------------------------------------
+
+// The gate must be 'down' whenever the train is at 'in'.
+// This should be UNreachable (Pmax = 0) for a correct model.
+"unsafe_train_in_gate_not_down" : Pmax=? [ F (state_position=2 & state_gate_position!=2) ];
+
+// ---------------------------------------------------------------------
+// 4. TIMED REACHABILITY  — PTA-specific (time-bounded until)
+// ---------------------------------------------------------------------
+
+// Can the train reach 'in' within 20 time units?
+"reach_in_by_20" : Pmax=? [ F<=20 state_position=2 ];
+
+// Can the gate reach 'down' within 10 time units of the run starting?
+"gate_down_by_10" : Pmax=? [ F<=10 state_gate_position=2 ];
