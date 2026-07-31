@@ -1,0 +1,3 @@
+echo "\nLoading scenario operators"
+
+source "scenario-apply.soar"

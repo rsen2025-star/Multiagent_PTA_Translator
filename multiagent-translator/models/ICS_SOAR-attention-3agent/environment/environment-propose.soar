@@ -1,0 +1,45 @@
+##!
+# @file
+#
+# @created rsen 20260724
+
+echo "\nLoading environment-propose.soar"
+
+# Initialize environment agent
+sp {environment*init
+    (state <s> ^superstate nil)
+-->
+    (<s> ^name environment)
+}
+
+# L0/L2 -> L1/L3: system go-signal arrived; raise the start-mission flag.
+sp {environment*propose*start-mission
+    (state <s> ^name environment
+              -^start-mission
+               ^io.input-link.systemdata <sd>)
+    (<sd> ^sys-start-mission <sm> > 0)
+-->
+    (<s> ^operator <o> + =)
+    (<o> ^name start-mission)
+}
+
+# L0/L1 -> L2/L3: crowd data arrived; raise the enviroSet flag.
+sp {environment*propose*sync-environment
+    (state <s> ^name environment
+              -^enviroSet
+               ^io.input-link.environment.crowd <crowd>)
+-->
+    (<s> ^operator <o> + =)
+    (<o> ^name sync-environment)
+}
+
+# L3: both flags up -> hand off to scenario + mission (fires once).
+sp {environment*propose*transition-mission
+    (state <s> ^name environment
+               ^start-mission yes
+               ^enviroSet yes
+              -^mission-started)
+-->
+    (<s> ^operator <o> + =)
+    (<o> ^name transition-mission)
+}

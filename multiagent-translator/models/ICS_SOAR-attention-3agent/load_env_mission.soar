@@ -1,0 +1,9 @@
+##!
+# @file
+#
+# @created rsen 20260723
+
+echo "\nLoading ICS attention model (environment + mission)"
+
+source "environment/load.soar"
+source "mission/load.soar"

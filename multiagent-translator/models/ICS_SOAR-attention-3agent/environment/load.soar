@@ -1,0 +1,5 @@
+echo "\nLoading environment agent"
+
+source "../settings.soar"
+source "environment-propose.soar"
+source "operators/load.soar"

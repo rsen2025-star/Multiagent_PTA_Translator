@@ -1,0 +1,10 @@
+##!
+# @file
+#
+# @created rsen 20260723
+
+echo "\nLoading settings.soar"
+
+waitsnc --on
+
+decide indifferent-selection --softmax

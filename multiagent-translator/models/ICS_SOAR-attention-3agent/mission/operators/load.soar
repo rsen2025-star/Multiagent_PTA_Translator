@@ -1,0 +1,3 @@
+echo "\nLoading mission operators"
+
+source "mission-apply.soar"

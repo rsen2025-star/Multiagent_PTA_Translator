@@ -1,0 +1,137 @@
+##!
+# @file
+#
+# @created rsen 20260726
+
+echo "\nLoading mission-apply.soar"
+
+# Initialize on the environment handoff: name the agent AND set up the scan in one
+# operator (o-support). The mission agent has nothing to do before the handoff, so
+# there is no separate "named but not yet scanning" step.
+sp {mission*apply*initialize
+    (state <s> ^operator.name initialize
+               ^io.input-link.scenario.use-box <use-box>)
+-->
+    (<s> ^name mission)
+    (<s> ^action Waiting)
+    (<s> ^current-person-id 0)
+    (<s> ^current-person-boxed <use-box>)
+    (<s> ^wall-clock 0)
+    (<s> ^tagged-attacker 0)
+    (write (crlf) |Mission: initialized & scan started|)
+}
+
+# Boxed examine, current person IS the attacker -> tag and advance.
+sp {mission*apply*examine-box-hit
+    (state <s> ^name mission
+               ^operator.name examine-box
+               ^tagged-attacker 0
+               ^current-person-id <pid>
+               ^current-person-boxed 1
+               ^wall-clock <wc>
+               ^action <a>
+               ^io.input-link.scenario.attacker-id <pid>)
+-->
+    (<s> ^tagged-attacker 0 -)
+    (<s> ^tagged-attacker 1)
+    (<s> ^action <a> -)
+    (<s> ^action Tagged)
+    (<s> ^current-person-id <pid> -)
+    (<s> ^current-person-id (+ <pid> 1))
+    (<s> ^current-person-boxed 1 -)
+    (<s> ^current-person-boxed 0)
+    (<s> ^wall-clock <wc> -)
+    (<s> ^wall-clock (+ <wc> 1))
+    (write (crlf) |Boxed examine matched attacker at | <pid>)
+}
+
+# Boxed examine, current person is NOT the attacker -> advance, unbox.
+sp {mission*apply*examine-box-miss
+    (state <s> ^name mission
+               ^operator.name examine-box
+               ^tagged-attacker 0
+               ^current-person-id <pid>
+               ^current-person-boxed 1
+               ^wall-clock <wc>
+               ^io.input-link.scenario.attacker-id <aid> <> <pid>)
+-->
+    (<s> ^current-person-id <pid> -)
+    (<s> ^current-person-id (+ <pid> 1))
+    (<s> ^current-person-boxed 1 -)
+    (<s> ^current-person-boxed 0)
+    (<s> ^wall-clock <wc> -)
+    (<s> ^wall-clock (+ <wc> 1))
+    (write (crlf) |Boxed examine miss at | <pid>)
+}
+
+# Unboxed examine, current person IS the attacker -> tag and advance.
+sp {mission*apply*examine-hit
+    (state <s> ^name mission
+               ^operator.name examine
+               ^tagged-attacker 0
+               ^current-person-id <pid>
+               ^current-person-boxed 0
+               ^wall-clock <wc>
+               ^action <a>
+               ^io.input-link.scenario.attacker-id <pid>)
+-->
+    (<s> ^tagged-attacker 0 -)
+    (<s> ^tagged-attacker 1)
+    (<s> ^action <a> -)
+    (<s> ^action Tagged)
+    (<s> ^current-person-id <pid> -)
+    (<s> ^current-person-id (+ <pid> 1))
+    (<s> ^wall-clock <wc> -)
+    (<s> ^wall-clock (+ <wc> 1))
+    (write (crlf) |Examine matched attacker at | <pid>)
+}
+
+# Unboxed examine, current person is NOT the attacker -> advance.
+sp {mission*apply*examine-miss
+    (state <s> ^name mission
+               ^operator.name examine
+               ^tagged-attacker 0
+               ^current-person-id <pid>
+               ^current-person-boxed 0
+               ^wall-clock <wc>
+               ^io.input-link.scenario.attacker-id <aid> <> <pid>)
+-->
+    (<s> ^current-person-id <pid> -)
+    (<s> ^current-person-id (+ <pid> 1))
+    (<s> ^wall-clock <wc> -)
+    (<s> ^wall-clock (+ <wc> 1))
+    (write (crlf) |Examine miss at | <pid>)
+}
+
+# Deadline reached before tagging -> Deadline terminal.
+sp {mission*apply*deadline-reached
+    (state <s> ^name mission
+               ^operator.name deadline-reached
+               ^action <a>)
+-->
+    (<s> ^action <a> -)
+    (<s> ^action Deadline)
+    (write (crlf) |Deadline reached before tagging attacker.|)
+}
+
+# All examined, none matched -> Not-Tagged terminal.
+sp {mission*apply*mission-complete-untagged
+    (state <s> ^name mission
+               ^operator.name mission-complete-untagged
+               ^action <a>)
+-->
+    (<s> ^action <a> -)
+    (<s> ^action Not-Tagged)
+    (write (crlf) |All people examined without tagging attacker.|)
+}
+
+# Attacker tagged -> Complete terminal.
+sp {mission*apply*mission-complete-tagged
+    (state <s> ^name mission
+               ^operator.name mission-complete-tagged
+               ^action <a>)
+-->
+    (<s> ^action <a> -)
+    (<s> ^action Complete)
+    (write (crlf) |Mission complete: attacker tagged.|)
+}

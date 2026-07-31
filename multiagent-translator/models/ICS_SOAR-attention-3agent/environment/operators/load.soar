@@ -1,0 +1,3 @@
+echo "\nLoading environment operators"
+
+source "environment-apply.soar"

@@ -1,0 +1,35 @@
+##!
+# @file
+#
+# @created rsen 20260724
+
+echo "\nLoading environment-apply.soar"
+
+# Raise the start-mission flag (absence-gate idiom: no remove-add flip).
+sp {environment*apply*start-mission
+    (state <s> ^operator <o>)
+    (<o> ^name start-mission)
+-->
+    (<s> ^start-mission yes)
+    (write (crlf) |Environment: start-mission received|)
+}
+
+# Raise the enviroSet flag.
+sp {environment*apply*sync-environment
+    (state <s> ^operator <o>)
+    (<o> ^name sync-environment)
+-->
+    (<s> ^enviroSet yes)
+    (write (crlf) |Environment: crowd synced|)
+}
+
+#scenario + mission receive it on their input-links.
+sp {environment*apply*transition-mission
+    (state <s> ^operator <o>
+               ^io.output-link <out>)
+    (<o> ^name transition-mission)
+-->
+    (<s> ^mission-started yes)
+    (<out> ^signal transition-mission)
+    (write (crlf) |Environment: transition-mission signal sent|)
+}

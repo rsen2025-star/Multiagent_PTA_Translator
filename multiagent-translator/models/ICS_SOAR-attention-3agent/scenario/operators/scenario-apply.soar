@@ -1,0 +1,19 @@
+##!
+# @file
+#
+# @created rsen 20260723
+
+echo "\nLoading scenario-apply.soar"
+
+# Commit the softmax winner, publish attacker-id once on output-link.
+sp {scenario*apply*set-attacker-id
+    (state <s> ^operator <o>
+               ^io.output-link <out>)
+    (<o> ^name set-attacker-id
+         ^target-id <id>)
+-->
+    (<s> ^attacker-id <id>)
+    (<out> ^scenario <o-sc>)
+    (<o-sc> ^attacker-id <id>)
+    (write (crlf) |Scenario: attacker is person | <id>)
+}

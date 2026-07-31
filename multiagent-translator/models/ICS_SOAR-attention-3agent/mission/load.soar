@@ -1,0 +1,5 @@
+echo "\nLoading mission agent"
+
+source "../settings.soar"
+source "mission-propose.soar"
+source "operators/load.soar"

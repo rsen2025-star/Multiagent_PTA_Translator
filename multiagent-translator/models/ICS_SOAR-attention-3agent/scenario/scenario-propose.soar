@@ -1,0 +1,66 @@
+##!
+# @file
+#
+# @created rsen 20260723
+
+echo "\nLoading scenario-propose.soar"
+
+# Initialize scenario agent
+sp {scenario*init
+    (state <s> ^superstate nil)
+-->
+    (<s> ^name scenario)
+}
+
+# Boxed tip: person 0 carries the ATR box; weight = box-accuracy.
+sp {scenario*propose*set-attacker-id*boxed
+    (state <s> ^name scenario
+              -^attacker-id
+               ^io.input-link <in>)
+    (<in> ^signal transition-mission
+          ^scenario <sc>
+          ^environment.crowd.person <p>)
+    (<sc> ^use-box 1
+          ^box-accuracy <b>)
+    (<p> ^id 0)
+-->
+    (<s> ^operator <o> +)
+    (<o> ^name set-attacker-id
+         ^target-id 0)
+    (<s> ^operator <o> = <b>)
+}
+
+# Boxed tip wrong: any other person; weight = (1 - box-accuracy)/19.
+sp {scenario*propose*set-attacker-id*unboxed
+    (state <s> ^name scenario
+              -^attacker-id
+               ^io.input-link <in>)
+    (<in> ^signal transition-mission
+          ^scenario <sc>
+          ^environment.crowd.person <p>)
+    (<sc> ^use-box 1
+          ^box-accuracy <b>)
+    (<p> ^id { <id> <> 0 })
+-->
+    (<s> ^operator <o> +)
+    (<o> ^name set-attacker-id
+         ^target-id <id>)
+    (<s> ^operator <o> = (/ (- 1.0 <b>) 19))
+}
+
+# No box: every person equally likely; weight = 1/20.
+sp {scenario*propose*set-attacker-id*uniform
+    (state <s> ^name scenario
+              -^attacker-id
+               ^io.input-link <in>)
+    (<in> ^signal transition-mission
+          ^scenario <sc>
+          ^environment.crowd.person <p>)
+    (<sc> ^use-box 0)
+    (<p> ^id <id>)
+-->
+    (<s> ^operator <o> +)
+    (<o> ^name set-attacker-id
+         ^target-id <id>)
+    (<s> ^operator <o> = (/ 1.0 20))
+}

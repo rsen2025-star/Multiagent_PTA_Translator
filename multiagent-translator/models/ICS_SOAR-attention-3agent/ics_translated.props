@@ -1,0 +1,32 @@
+// Certification battery for the TRANSLATED model (ics_soar-attention-3agent_translated.pm).
+// Mirrors attention_crafted.props, with two differences that are properties of the
+// translation, not of the maths:
+//   - the endings are written as plain state tests, not labels. The translator does not
+//     invent label names; naming an outcome is the job of whoever asks the question, and
+//     that is this file. state_action codes its values in first-seen order:
+//         0 nil   1 Waiting   2 Tagged   3 Deadline   4 Not-Tagged   5 Complete
+//     (2026-07-30: ^action idle and ^scan-started were removed from the SOAR as
+//      redundant with ^phase, so every code after Waiting shifted down by one.)
+//   - sys_start_mission must be supplied (see below): the SOAR genuinely tests
+//     ^sys-start-mission > 0 before starting, and we translate as written.
+//
+// Run:
+//   Push-Location "C:\Program Files\prism-4.8.1\bin"
+//   .\prism.bat <abs .pm> <abs .props> `
+//       -const deadline=5,box_accuracy=0.8,use_box=1,sys_start_mission=1 -ptamethod digital
+//   Pop-Location
+//
+// Expected (b=0.8, use_box=1), from the certified battery:
+//   d=1  -> 0       / 0.8
+//   d=5  -> 0.83158 / 0.84211
+//   d=20 -> 0.98947 / 1.0
+
+// The oracle property
+Pmin=? [ F (state_tagged_attacker=1) ]
+Pmax=? [ F (state_tagged_attacker=1) ]
+
+// The other endings  (state_action: 3 = Deadline, 4 = Not-Tagged)
+Pmin=? [ F (state_action=3) ]
+Pmax=? [ F (state_action=3) ]
+Pmin=? [ F (state_action=4) ]
+Pmax=? [ F (state_action=4) ]

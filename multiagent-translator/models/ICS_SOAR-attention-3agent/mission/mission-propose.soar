@@ -1,0 +1,80 @@
+##!
+# @file
+#
+# @created rsen 20260726
+
+echo "\nLoading mission-propose.soar"
+
+# Initialize the mission agent when the environment hands off (signal on input-link).
+# Operator-based so the state WMEs get o-support and can be legally changed later;
+# a bare state rule would re-assert them. -^name keeps it to a single firing.
+sp {mission*propose*initialize
+    (state <s> ^superstate nil
+              -^name
+               ^io.input-link <in>)
+    (<in> ^signal transition-mission)
+-->
+    (<s> ^operator <o> +)
+    (<o> ^name initialize)
+}
+
+# Boxed examination for person 0 (the ATR-tipped person).
+sp {mission*propose*examine-box
+    (state <s> ^name mission
+               ^action Waiting
+               ^tagged-attacker 0
+               ^current-person-id <pid> < 20
+               ^current-person-boxed 1
+               ^wall-clock <wc> < <deadline>
+               ^io.input-link.scenario.deadline <deadline>)
+-->
+    (<s> ^operator <o> +)
+    (<o> ^name examine-box ^target-id <pid>)
+}
+
+# Unboxed examination for persons 1..19.
+sp {mission*propose*examine
+    (state <s> ^name mission
+               ^action Waiting
+               ^tagged-attacker 0
+               ^current-person-id <pid> < 20
+               ^current-person-boxed 0
+               ^wall-clock <wc> < <deadline>
+               ^io.input-link.scenario.deadline <deadline>)
+-->
+    (<s> ^operator <o> +)
+    (<o> ^name examine ^target-id <pid>)
+}
+
+# Deadline reached before tagging.
+# No "scan started" test is needed: ^wall-clock does not exist until initialize
+# creates it, so this rule cannot match before the scan begins.
+sp {mission*propose*deadline-reached
+    (state <s> ^name mission
+               ^tagged-attacker 0
+               ^wall-clock <wc> >= <deadline>
+               ^io.input-link.scenario.deadline <deadline>)
+-->
+    (<s> ^operator <o> +)
+    (<o> ^name deadline-reached)
+}
+
+# All 20 examined, none matched.
+sp {mission*propose*mission-complete-untagged
+    (state <s> ^name mission
+               ^action Waiting
+               ^tagged-attacker 0
+               ^current-person-id <pid> >= 20)
+-->
+    (<s> ^operator <o> +)
+    (<o> ^name mission-complete-untagged)
+}
+
+# Attacker tagged -> success terminal.
+sp {mission*propose*mission-complete-tagged
+    (state <s> ^name mission
+               ^tagged-attacker 1)
+-->
+    (<s> ^operator <o> +)
+    (<o> ^name mission-complete-tagged)
+}

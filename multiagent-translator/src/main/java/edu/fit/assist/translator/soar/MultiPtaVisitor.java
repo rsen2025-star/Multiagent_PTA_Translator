@@ -8,6 +8,13 @@ import org.antlr.v4.runtime.tree.AbstractParseTreeVisitor;
 //   (1) varType is populated here (the DTMC path relied on Output.generateType()).
 //   (2) init-value detection is structural (^superstate nil), not name-based.
 public class MultiPtaVisitor<Object> extends AbstractParseTreeVisitor<Object> implements SoarVisitor<Object> {
+    /** Where a numeric-indifferent preference's weight is filed on its rule (T3, softmax). */
+    static final String OP_PREFERENCE_VAR = "state_operator_preference";
+
+    /** A preference whose whole weight is one bound variable, e.g. the "<b>" of "^operator <o> = <b>". */
+    private static final java.util.regex.Pattern BARE_PREF_VARIABLE =
+            java.util.regex.Pattern.compile("=\\s*(<[^<>\\s]+>)\\s*$");
+
     Rule currentRule;
     String currentContext = "";
     boolean negateCondition = false;
@@ -29,7 +36,93 @@ public class MultiPtaVisitor<Object> extends AbstractParseTreeVisitor<Object> im
         for (Variable var : rules.variables.values()) {
             var.generateType();
         }
+        // FIX 3 (M-7): clean up guard strings once every rule is built. A condition like
+        // `^wall-clock <wc> < <deadline>` makes the parser mint an auto-var (<w*1>) for the
+        // attribute and bind it in contextMap only AFTER the guard string was assembled, so
+        // the guard keeps the raw `<w*1>` token. We (a) resolve any leftover <..> token to
+        // its variable, and (b) canonicalize an ordered comparison so the agent's OWN
+        // variable sits on the left (an io input is a bound, not the subject) — which is
+        // also what lets clock detection see which quantity is bounded.
+        for (Rule r : rules.rules) {
+            for (int i = 0; i < r.guards.size(); i++) {
+                r.guards.set(i, canonicalizeGuard(r.guards.get(i), r));
+            }
+        }
         return result;
+    }
+
+    /**
+     * What: resolves any leftover <..> token in a guard and orients "io-var op state-var" comparisons.
+     * Why:  a late-bound auto-var (<w*1>) can survive in the string, and clock detection needs the
+     *       agent's own variable on the left ("wall_clock < deadline", not "deadline > <w*1>").
+     * PTA:  feeds enab (clean guards) and X (lets a bounded var be seen as a clock).
+     */
+    private String canonicalizeGuard(String guard, Rule r) {
+        if (guard == null) return guard;
+        String[] tok = guard.trim().split("\\s+");
+        if (tok.length != 3) return guard;              // only plain "A op B" guards
+        String a = resolveGuardToken(tok[0], r);
+        String op = tok[1];
+        String b = resolveGuardToken(tok[2], r);
+        // an ordered test between two variables: put the non-io (agent's own) var first,
+        // flipping the operator, so the bounded quantity is the guard's subject.
+        if (isOrderedRel(op) && isVarToken(a) && isVarToken(b)
+                && isIoVar(a) && !isIoVar(b)) {
+            return b + " " + flipRel(op) + " " + a;
+        }
+        return a + " " + op + " " + b;
+    }
+
+    /**
+     * What: replaces a bound-variable token (<x>) with the variable it maps to, else leaves it.
+     * Why:  the parser may bind an auto-var in contextMap only after the guard string was built.
+     * PTA:  helper for enab (guard cleanup).
+     */
+    private String resolveGuardToken(String t, Rule r) {
+        return (t.startsWith("<") && t.endsWith(">") && r.contextMap.containsKey(t))
+                ? r.contextMap.get(t) : t;
+    }
+
+    /**
+     * What: true if a token names a model variable (starts with "state_").
+     * Why:  orientation only applies between two real variables, not a number.
+     * PTA:  helper for enab (guard orientation).
+     */
+    private static boolean isVarToken(String t) {
+        return t != null && t.startsWith("state_");
+    }
+
+    /**
+     * What: true if a token is an io-link variable (starts with "state_io_").
+     * Why:  an io input is a bound, so it belongs on the RIGHT of a comparison.
+     * PTA:  helper for enab (guard orientation).
+     */
+    private static boolean isIoVar(String t) {
+        return t != null && t.startsWith("state_io_");
+    }
+
+    /**
+     * What: true if the operator is an ordered comparison (< > <= >=).
+     * Why:  only ordered tests have a direction worth flipping; "=" / "!=" are symmetric.
+     * PTA:  helper for enab (guard orientation).
+     */
+    private static boolean isOrderedRel(String op) {
+        return "<".equals(op) || ">".equals(op) || "<=".equals(op) || ">=".equals(op);
+    }
+
+    /**
+     * What: returns the mirrored operator (< <-> >, <= <-> >=).
+     * Why:  swapping the two sides of a comparison must reverse its direction.
+     * PTA:  helper for enab (guard orientation).
+     */
+    private static String flipRel(String op) {
+        switch (op) {
+            case "<":  return ">";
+            case ">":  return "<";
+            case "<=": return ">=";
+            case ">=": return "<=";
+            default:   return op;
+        }
     }
 
     /**
@@ -648,9 +741,22 @@ public class MultiPtaVisitor<Object> extends AbstractParseTreeVisitor<Object> im
         String operation = (String)visit(ctx.func_name());
         String operand1 = (String)visit(ctx.value(0));
         String operand2 = (String)visit(ctx.value(1));
-        String infixValue = operand1 + " " + operation + " "+ operand2;
+        // Soar's prefix form is unambiguous; infix is not. Keep the bracketing of a nested
+        // operand or "(/ (- 1.0 <b>) 19)" flattens to "1.0 - <b> / 19", which reads as
+        // 1.0 - (<b>/19) — a different number.
+        String infixValue = group(operand1) + " " + operation + " " + group(operand2);
 
         return (Object)infixValue;
+    }
+
+    /**
+     * Wrap an operand in brackets when it is itself a compound expression.
+     * A bare name or number is left alone, so simple arithmetic keeps its existing shape.
+     */
+    private String group(String operand) {
+        if (operand == null || operand.trim().isEmpty()) return operand;
+        String s = operand.trim();
+        return s.contains(" ") ? "(" + s + ")" : s;
     }
 
     /**
@@ -796,11 +902,33 @@ public class MultiPtaVisitor<Object> extends AbstractParseTreeVisitor<Object> im
             // if it is a learning rule, get the priority
             if(pref_specifier.startsWith("=") && pref_specifier.length() > 1){
 
-
-                // set priority value
+                // The text after "=" is this rule's WEIGHT: with softmax on, Soar picks among
+                // the tied proposals in proportion to it, which is exactly a probability
+                // distribution (T3). Keep it verbatim — a weight is usually symbolic
+                // ("<b>", "(/ (- 1.0 <b>) 19)") and only the plain-number case fits the
+                // numeric `priority` field. Filed under state_operator_* so every block that
+                // skips operator bookkeeping already ignores it.
+                String weight = pref_specifier.substring(1).trim();
+                // A weight that is just a bound variable ("= <b>") comes back garbled: the
+                // shipped parser reads the opening "<" as a preference symbol of its own and
+                // splits the name apart. That one shape is unambiguous in the source text, so
+                // take it from there. Compound weights parse correctly and are left alone.
+                java.util.regex.Matcher bare = BARE_PREF_VARIABLE.matcher(ctx.getText());
+                if(bare.find()){
+                    weight = bare.group(1);
+                }
+                for(String key : currentRule.contextMap.keySet()){
+                    if(weight.contains(key)){
+                        weight = weight.replace(key, currentRule.contextMap.get(key));
+                    }
+                }
+                if(!weight.isEmpty()){
+                    currentRule.addAttrValue(OP_PREFERENCE_VAR, weight);
+                }
+                // set priority value (numeric weights only; a symbolic one simply has none)
                 try{
-                    currentRule.priority = Double.parseDouble(pref_specifier.substring(1));
-                }catch(Exception e){e.printStackTrace();}
+                    currentRule.priority = Double.parseDouble(weight);
+                }catch(NumberFormatException ignored){}
                 // Search for the name of the operator of which we are setting the preference.
                 String op_name = "";
                 for(String guard : currentRule.guards){
@@ -809,7 +937,13 @@ public class MultiPtaVisitor<Object> extends AbstractParseTreeVisitor<Object> im
                         op_name = guard.substring("state_operator_name = ".length());
                     }
                 }
-                currentRule.addAttrValue("state_operator_name", op_name);
+                // Only adopt a name found in the GUARDS (apply/learning rules put it there).
+                // A PROPOSE rule names its operator in the ACTION (^name ...), already stored
+                // in valueMap; don't clobber that with an empty guard-derived name (this is
+                // what blanked the softmax fan's operator name and dropped one propose rule).
+                if(!op_name.isEmpty()){
+                    currentRule.addAttrValue("state_operator_name", op_name);
+                }
                 // check if rule has max priority
             }else if(pref_specifier.contains(">")){
                 // set priority value
@@ -822,7 +956,13 @@ public class MultiPtaVisitor<Object> extends AbstractParseTreeVisitor<Object> im
                         op_name = guard.substring("state_operator_name = ".length());
                     }
                 }
-                currentRule.addAttrValue("state_operator_name", op_name);
+                // Only adopt a name found in the GUARDS (apply/learning rules put it there).
+                // A PROPOSE rule names its operator in the ACTION (^name ...), already stored
+                // in valueMap; don't clobber that with an empty guard-derived name (this is
+                // what blanked the softmax fan's operator name and dropped one propose rule).
+                if(!op_name.isEmpty()){
+                    currentRule.addAttrValue("state_operator_name", op_name);
+                }
             }
         }
 
@@ -887,9 +1027,10 @@ public class MultiPtaVisitor<Object> extends AbstractParseTreeVisitor<Object> im
      */
     @Override
     public Object visitUnary_or_binary_pref(SoarParser.Unary_or_binary_prefContext ctx) {
-
-//        System.out.println(ctx.getText() + " Why?");
-        return null;
+        // Return the symbol itself ("=", "+", ">"). Returning null here made every preference
+        // read back as "null <weight>", so no caller could ever recognise one — which is why
+        // the numeric-indifferent weights of a softmax fan were being dropped (T3).
+        return (Object)ctx.getText();
     }
 
     /**

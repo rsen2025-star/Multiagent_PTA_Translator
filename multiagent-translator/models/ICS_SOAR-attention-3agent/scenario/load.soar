@@ -1,0 +1,5 @@
+echo "\nLoading scenario agent"
+
+source "../settings.soar"
+source "scenario-propose.soar"
+source "operators/load.soar"
