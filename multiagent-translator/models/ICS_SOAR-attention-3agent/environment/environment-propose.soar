@@ -38,7 +38,7 @@ sp {environment*propose*transition-mission
     (state <s> ^name environment
                ^start-mission yes
                ^enviroSet yes
-              -^mission-started)
+              -^handoff-sent)
 -->
     (<s> ^operator <o> + =)
     (<o> ^name transition-mission)

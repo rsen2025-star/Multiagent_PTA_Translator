@@ -38,7 +38,7 @@ mission's input-link (`state_io_scenario_attacker_id` in the crafted PM).
 — published once; the bridge copies it to scenario's and mission's input-links (this is the
 shared `[transition_mission]` sync label in the crafted PM). Flags use the absence-gate idiom
 (no attribute = 0/no; add `yes` once) so no remove-add flip is needed; the one-shot guard is
-the local `^mission-started` flag.
+the local `^handoff-sent` flag.
 
 ## Grammar conformance
 All 6 files parse under the shipped parser (verified with the real ANTLR SoarParser generated from

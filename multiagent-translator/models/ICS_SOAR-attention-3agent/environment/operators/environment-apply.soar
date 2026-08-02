@@ -29,7 +29,7 @@ sp {environment*apply*transition-mission
                ^io.output-link <out>)
     (<o> ^name transition-mission)
 -->
-    (<s> ^mission-started yes)
+    (<s> ^handoff-sent yes)
     (<out> ^signal transition-mission)
     (write (crlf) |Environment: transition-mission signal sent|)
 }
