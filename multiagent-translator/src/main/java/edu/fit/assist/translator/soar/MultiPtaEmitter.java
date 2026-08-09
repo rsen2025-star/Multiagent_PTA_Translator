@@ -327,18 +327,39 @@ public class MultiPtaEmitter {
                 String[] tok = conj.split("\\s+");
                 if (tok.length != 3 || !model.clocks.contains(tok[0])) continue;
                 timed = true;
-                boolean bounds = "<=".equals(tok[1])                                   // a budget
+                boolean bounds = "<=".equals(tok[1]) || "<".equals(tok[1])             // a budget
                         || (">=".equals(tok[1]) && !model.accumulatingClocks.contains(tok[0]));
                 if (bounds) {
                     addClause(clauses, "(" + where + " => " + tok[0] + "<="
                             + resolveConstants(tok[2]) + ")");
                 }
             }
-            // Fall back to one decision cycle only when the rules named no clock at all, and
-            // only when acting actually escapes the condition — a cap the edge cannot relieve
-            // would leave the agent unable to move and unable to let time pass.
-            if (!timed && model.pacingClock != null && writesOwnCondition(model, t)) {
-                addClause(clauses, "(" + where + " => " + model.pacingClock + "<=1)");
+            // Fall back only when the rules named no clock at all, and only when acting
+            // actually escapes the condition — a cap the edge cannot relieve would leave the
+            // agent unable to move and unable to let time pass.
+            if (!timed && writesOwnCondition(model, t)) {
+                if (model.pacingClock != null) {
+                    // one decision cycle, the SOAR default
+                    addClause(clauses, "(" + where + " => " + model.pacingClock
+                            + "<=" + resolveConstants(t.pacingBound) + ")");
+                } else {
+                    // No pacing clock to lean on. The edge tests no clock, but it RESETS one —
+                    // and bounding it at the value it is about to be given costs nothing (the
+                    // edge overwrites it) while still pinning time, which is the whole job.
+                    //
+                    // ACCUMULATING clocks only. Such a clock measures total elapsed time, so
+                    // capping it at its reset value says "no time has passed yet" — which is
+                    // what the rules already said by starting it there. A RESETTING clock
+                    // measures the gap BETWEEN moves; capping that at 0 would instead say
+                    // "react instantly", a response-time bound no rule stated. Train_gate is
+                    // the proof: its gate would have been forced to move the moment it was
+                    // told to, silently answering an open design question.
+                    for (Map.Entry<String, String> reset : t.clockUpdates.entrySet()) {
+                        if (!model.accumulatingClocks.contains(reset.getKey())) continue;
+                        addClause(clauses, "(" + where + " => " + reset.getKey()
+                                + "<=" + resolveConstants(reset.getValue()) + ")");
+                    }
+                }
             }
         }
         if (clauses.isEmpty()) return "";

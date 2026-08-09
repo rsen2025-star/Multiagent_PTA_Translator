@@ -1,18 +1,23 @@
 """
 Single live run of the 3-agent build. Prints a step trace and the ending.
 
-Usage:  python run_once.py [deadline] [use_box] [box_accuracy]
-Example: python run_once.py 5 1 0.8
+Usage:  python run_once.py [--deadline D] [--use-box 0|1] [--acc B] [--I N]
+Example: python run_once.py --deadline 9 --acc 0.8 --I 2
 """
-import sys
+import argparse
 from attention_env import AttentionEnv
 
-deadline = int(sys.argv[1]) if len(sys.argv) > 1 else 5
-use_box = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-box_accuracy = float(sys.argv[3]) if len(sys.argv) > 3 else 0.8
+ap = argparse.ArgumentParser(description="one live episode of the 3-agent build")
+ap.add_argument("--deadline", type=int, default=5)
+ap.add_argument("--use-box", type=int, default=1, choices=(0, 1))
+ap.add_argument("--acc", type=float, default=0.8, help="box_accuracy, Collins' P(tp)")
+ap.add_argument("--I", type=int, default=1, help="inspection time (Collins v1.5's I)")
+args = ap.parse_args()
 
-print(f"deadline={deadline} use_box={use_box} box_accuracy={box_accuracy}")
-env = AttentionEnv(deadline=deadline, use_box=use_box, box_accuracy=box_accuracy)
+print(f"deadline={args.deadline} use_box={args.use_box} box_accuracy={args.acc} "
+      f"inspection_time={args.I}")
+env = AttentionEnv(deadline=args.deadline, use_box=args.use_box,
+                   box_accuracy=args.acc, inspection_time=args.I)
 env.create_agents()
 outcome = env.run_episode(trace=True)
 print(f"\nattacker = person {env.attacker_id}")

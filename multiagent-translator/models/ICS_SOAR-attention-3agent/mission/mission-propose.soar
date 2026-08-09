@@ -26,7 +26,9 @@ sp {mission*propose*examine-box
                ^current-person-id <pid> < 20
                ^current-person-boxed 1
                ^wall-clock <wc> < <deadline>
-               ^io.input-link.scenario.deadline <deadline>)
+               ^inspect-clock { <ic> >= <it> }
+               ^io.input-link.scenario.deadline <deadline>
+               ^io.input-link.scenario.inspection-time <it>)
 -->
     (<s> ^operator <o> +)
     (<o> ^name examine-box ^target-id <pid>)
@@ -40,10 +42,31 @@ sp {mission*propose*examine
                ^current-person-id <pid> < 20
                ^current-person-boxed 0
                ^wall-clock <wc> < <deadline>
-               ^io.input-link.scenario.deadline <deadline>)
+               ^inspect-clock { <ic> >= <it> }
+               ^io.input-link.scenario.deadline <deadline>
+               ^io.input-link.scenario.inspection-time <it>)
 -->
     (<s> ^operator <o> +)
     (<o> ^name examine ^target-id <pid>)
+}
+
+# Time passes. One tick advances BOTH clocks: they differ in what they measure and
+# when they reset, not in when they advance — one second cannot pass for one and
+# not the other. The apply touches nothing but clocks, so the whole tick loop folds
+# into zero PRISM edges; it is here so the inspect clock's bound can be read from
+# this guard (same shape as Train_gate's clock operator).
+sp {mission*propose*tick
+    (state <s> ^name mission
+               ^action Waiting
+               ^tagged-attacker 0
+               ^current-person-id <pid> < 20
+               ^wall-clock <wc> < <deadline>
+               ^inspect-clock { <ic> < <it> }
+               ^io.input-link.scenario.deadline <deadline>
+               ^io.input-link.scenario.inspection-time <it>)
+-->
+    (<s> ^operator <o> +)
+    (<o> ^name tick)
 }
 
 # Deadline reached before tagging.

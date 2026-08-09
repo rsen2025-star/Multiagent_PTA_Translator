@@ -1,19 +1,16 @@
 """
 Sweep deadline x box_accuracy, run the SOAR sim at each grid point, and plot the
-empirical SOAR tag-rate against the PRISM Pmin/Pmax analytic curves — the same
-grid PRISM uses, one color per accuracy.
+measured tag-rate — one color per accuracy.
 
-Overlay (choose with --overlay):
-  both  -> solid = PRISM Pmax, dotted = PRISM Pmin, 'o' = SOAR  (default)
-  pmax  -> solid = PRISM Pmax only + SOAR dots   ("do they match?")
-  pmin  -> solid = PRISM Pmin only + SOAR dots   (matches your Pmin screenshot;
-           SOAR sits ABOVE, since discrete SOAR = Pmax)
+The figure is deliberately raw: SOAR only, no overlay. A PRISM comparison belongs
+in a table diff, not baked into this plot, so neither tool editorialises about the
+other. Run PRISM on the same grid and compare the CSVs.
 
 Everything is a CLI arg; each run re-sweeps and OVERWRITES the PNG + CSV.
 
 Examples:
   python sweep_plot.py
-  python sweep_plot.py --runs 2000 --acc 0.7,0.8,0.9,1.0 --overlay pmin
+  python sweep_plot.py --runs 2000 --acc 0.7,0.8,0.9,1.0
   python sweep_plot.py --dmin 0 --dmax 20 --use-box 1 --out mytest.png
 """
 import argparse, csv, os, sys, contextlib
@@ -41,21 +38,10 @@ def silence_soar():
         os.close(devnull); os.close(saved_out); os.close(saved_err)
 
 
-def pmax(d, b):
-    if d <= 0:
-        return 0.0
-    return min(1.0, b + (d - 1) * (1 - b) / 19)
-
-
-def pmin(d, b):
-    if d <= 1:
-        return 0.0
-    return b + (d - 2) * (1 - b) / 19
-
-
-def soar_rate(deadline, b, use_box, runs):
+def soar_rate(deadline, b, use_box, runs, inspection_time):
     with silence_soar():
-        env = AttentionEnv(deadline=deadline, use_box=use_box, box_accuracy=b)
+        env = AttentionEnv(deadline=deadline, use_box=use_box, box_accuracy=b,
+                           inspection_time=inspection_time)
         env.create_agents()
         tagged = 0
         for i in range(runs):
@@ -67,16 +53,16 @@ def soar_rate(deadline, b, use_box, runs):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="SOAR sim vs PRISM Pmin/Pmax sweep+plot")
+    ap = argparse.ArgumentParser(description="SOAR sim sweep + plot (SOAR only)")
     ap.add_argument("--runs", type=int, default=1000, help="episodes per grid point")
     ap.add_argument("--acc", type=str, default="0.70,0.75,0.80,0.85,0.90,0.95,1.00",
                     help="comma list of box_accuracy values")
     ap.add_argument("--dmin", type=int, default=0, help="min deadline")
     ap.add_argument("--dmax", type=int, default=20, help="max deadline")
     ap.add_argument("--use-box", type=int, default=1, choices=(0, 1))
-    ap.add_argument("--overlay", choices=("both", "pmax", "pmin", "none"), default="both",
-                    help="which PRISM lines to draw ('none' = SOAR dots only)")
-    ap.add_argument("--out", type=str, default="soar_vs_prism.png")
+    ap.add_argument("--I", type=int, default=1,
+                    help="inspection time (Collins v1.5's I): I=1 is a ramp, I>=2 a staircase")
+    ap.add_argument("--out", type=str, default="soar_sweep.png")
     args = ap.parse_args()
 
     accuracies = [float(x) for x in args.acc.split(",")]
@@ -85,12 +71,12 @@ def main():
     total_cells = len(accuracies) * len(deadlines)
     print(f"sweep: {len(accuracies)} accuracies x {len(deadlines)} deadlines "
           f"x {args.runs} runs = {total_cells * args.runs} episodes "
-          f"(use_box={args.use_box}, overlay={args.overlay})")
+          f"(use_box={args.use_box}, I={args.I})")
     results = {b: {} for b in accuracies}
     done = 0
     for b in accuracies:
         for d in deadlines:
-            results[b][d] = soar_rate(d, b, args.use_box, args.runs)
+            results[b][d] = soar_rate(d, b, args.use_box, args.runs, args.I)
             done += 1
             print(f"\r  {done:3d}/{total_cells} cells  "
                   f"(b={b:.2f}, deadline={d}, rate={results[b][d]:.3f})   ",
@@ -101,11 +87,10 @@ def main():
     csv_path = os.path.join(HERE, os.path.splitext(args.out)[0] + ".csv")
     with open(csv_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["box_accuracy", "deadline", "soar_rate", "pmin", "pmax"])
+        w.writerow(["box_accuracy", "deadline", "inspection_time", "use_box", "runs", "soar_rate"])
         for b in accuracies:
             for d in deadlines:
-                w.writerow([b, d, f"{results[b][d]:.5f}",
-                            f"{pmin(d,b):.5f}", f"{pmax(d,b):.5f}"])
+                w.writerow([b, d, args.I, args.use_box, args.runs, f"{results[b][d]:.5f}"])
     print(f"wrote {csv_path}")
 
     # plot
@@ -114,24 +99,13 @@ def main():
     n = max(1, len(accuracies) - 1)
     for k, b in enumerate(accuracies):
         color = cmap(k / n)
-        if args.overlay in ("both", "pmax"):
-            ax.plot(deadlines, [pmax(d, b) for d in deadlines], "-", color=color, lw=1.6)
-        if args.overlay in ("both", "pmin"):
-            style = ":" if args.overlay == "both" else "-"
-            ax.plot(deadlines, [pmin(d, b) for d in deadlines], style, color=color, lw=1.4)
-        # SOAR: connect dots with a line when there are no PRISM lines to read against
-        soar_style = "o-" if args.overlay == "none" else "o"
-        ax.plot(deadlines, [results[b][d] for d in deadlines], soar_style,
+        ax.plot(deadlines, [results[b][d] for d in deadlines], "o-",
                 color=color, ms=5, label=f"b={b:.2f}")
 
-    key = {"both": "solid=Pmax  dotted=Pmin  dots=SOAR",
-           "pmax": "solid=Pmax  dots=SOAR",
-           "pmin": "solid=Pmin  dots=SOAR",
-           "none": "SOAR simulation only"}[args.overlay]
     ax.set_xlabel("deadline")
-    ax.set_ylabel("probability of tagging attacker")
-    ax.set_title(f"SOAR sim vs PRISM  ({key})\n"
-                 f"use_box={args.use_box}, {args.runs} runs per point")
+    ax.set_ylabel("measured tag-rate")
+    ax.set_title(f"SOAR simulation — measured tag-rate\n"
+                 f"use_box={args.use_box}, I={args.I}, {args.runs} runs per point")
     ax.set_xlim(args.dmin, args.dmax + 1)
     ax.set_ylim(0, 1.05)
     ax.grid(True, alpha=0.3)

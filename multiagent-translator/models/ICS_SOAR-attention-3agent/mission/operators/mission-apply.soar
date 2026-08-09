@@ -17,8 +17,22 @@ sp {mission*apply*initialize
     (<s> ^current-person-id 0)
     (<s> ^current-person-boxed <use-box>)
     (<s> ^wall-clock 0)
+    (<s> ^inspect-clock 0)
     (<s> ^tagged-attacker 0)
     (write (crlf) |Mission: initialized & scan started|)
+}
+
+# Time passes: advance both clocks and nothing else. Writing only clocks is what
+# marks this as timekeeping rather than a move, so it becomes no PRISM edge at all.
+sp {mission*apply*tick
+    (state <s> ^operator.name tick
+               ^wall-clock <wc>
+               ^inspect-clock <ic>)
+-->
+    (<s> ^wall-clock <wc> -)
+    (<s> ^wall-clock (+ <wc> 1))
+    (<s> ^inspect-clock <ic> -)
+    (<s> ^inspect-clock (+ <ic> 1))
 }
 
 # Boxed examine, current person IS the attacker -> tag and advance.
@@ -28,7 +42,7 @@ sp {mission*apply*examine-box-hit
                ^tagged-attacker 0
                ^current-person-id <pid>
                ^current-person-boxed 1
-               ^wall-clock <wc>
+               ^inspect-clock <ic>
                ^action <a>
                ^io.input-link.scenario.attacker-id <pid>)
 -->
@@ -40,8 +54,8 @@ sp {mission*apply*examine-box-hit
     (<s> ^current-person-id (+ <pid> 1))
     (<s> ^current-person-boxed 1 -)
     (<s> ^current-person-boxed 0)
-    (<s> ^wall-clock <wc> -)
-    (<s> ^wall-clock (+ <wc> 1))
+    (<s> ^inspect-clock <ic> -)
+    (<s> ^inspect-clock 0)
     (write (crlf) |Boxed examine matched attacker at | <pid>)
 }
 
@@ -52,15 +66,15 @@ sp {mission*apply*examine-box-miss
                ^tagged-attacker 0
                ^current-person-id <pid>
                ^current-person-boxed 1
-               ^wall-clock <wc>
+               ^inspect-clock <ic>
                ^io.input-link.scenario.attacker-id <aid> <> <pid>)
 -->
     (<s> ^current-person-id <pid> -)
     (<s> ^current-person-id (+ <pid> 1))
     (<s> ^current-person-boxed 1 -)
     (<s> ^current-person-boxed 0)
-    (<s> ^wall-clock <wc> -)
-    (<s> ^wall-clock (+ <wc> 1))
+    (<s> ^inspect-clock <ic> -)
+    (<s> ^inspect-clock 0)
     (write (crlf) |Boxed examine miss at | <pid>)
 }
 
@@ -71,7 +85,7 @@ sp {mission*apply*examine-hit
                ^tagged-attacker 0
                ^current-person-id <pid>
                ^current-person-boxed 0
-               ^wall-clock <wc>
+               ^inspect-clock <ic>
                ^action <a>
                ^io.input-link.scenario.attacker-id <pid>)
 -->
@@ -81,8 +95,8 @@ sp {mission*apply*examine-hit
     (<s> ^action Tagged)
     (<s> ^current-person-id <pid> -)
     (<s> ^current-person-id (+ <pid> 1))
-    (<s> ^wall-clock <wc> -)
-    (<s> ^wall-clock (+ <wc> 1))
+    (<s> ^inspect-clock <ic> -)
+    (<s> ^inspect-clock 0)
     (write (crlf) |Examine matched attacker at | <pid>)
 }
 
@@ -93,13 +107,13 @@ sp {mission*apply*examine-miss
                ^tagged-attacker 0
                ^current-person-id <pid>
                ^current-person-boxed 0
-               ^wall-clock <wc>
+               ^inspect-clock <ic>
                ^io.input-link.scenario.attacker-id <aid> <> <pid>)
 -->
     (<s> ^current-person-id <pid> -)
     (<s> ^current-person-id (+ <pid> 1))
-    (<s> ^wall-clock <wc> -)
-    (<s> ^wall-clock (+ <wc> 1))
+    (<s> ^inspect-clock <ic> -)
+    (<s> ^inspect-clock 0)
     (write (crlf) |Examine miss at | <pid>)
 }
 

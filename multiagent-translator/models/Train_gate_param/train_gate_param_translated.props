@@ -1,0 +1,14 @@
+"unsafe_train_in_gate_not_down" : Pmax=? [ F (state_position=2 & state_gate_position!=2) ];
+"unsafe_unavoidable" : Pmin=? [ F (state_position=2 & state_gate_position!=2) ];
+
+"train_reaches_in_min" : Pmin=? [ F state_position=2 ];
+"train_reaches_in_max" : Pmax=? [ F state_position=2 ];
+
+"gate_reaches_down_min" : Pmin=? [ F state_gate_position=2 ];
+"gate_reaches_down_max" : Pmax=? [ F state_gate_position=2 ];
+
+"deadlock_reachable" : Pmax=? [ F "deadlock" ];
+"deadlock_certain" : Pmin=? [ F "deadlock" ];
+
+"reach_in_by_20" : Pmax=? [ F<=20 state_position=2 ];
+"gate_down_by_10" : Pmax=? [ F<=10 state_gate_position=2 ];

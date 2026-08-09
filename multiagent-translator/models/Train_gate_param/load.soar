@@ -1,0 +1,5 @@
+echo "\nLoading Train_gate agents"
+
+source "train/load.soar"
+source "controller/load.soar"
+source "gate/load.soar"

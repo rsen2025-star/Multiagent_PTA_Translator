@@ -476,6 +476,12 @@ public class MultiPtaModel {
          *  probabilities must sum to 1. */
         List<Branch> branches;
 
+        /** How long this edge takes, as the SOAR stated it — the amount it advances its clock by.
+         *  "1" is one decision cycle, SOAR's own unit, and the default when the rules name no
+         *  other duration. Lives on the EDGE, not the clock: one clock legitimately paces several
+         *  moves that take different times (a boxed vs an unboxed examine). */
+        String pacingBound = "1";
+
         public PtaTransition(String action) {
             this.action = action;
             this.guards = new ArrayList<>();

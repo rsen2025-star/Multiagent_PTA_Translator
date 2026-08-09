@@ -1,0 +1,4 @@
+echo "\nLoading train agent"
+
+
+source "train.soar"

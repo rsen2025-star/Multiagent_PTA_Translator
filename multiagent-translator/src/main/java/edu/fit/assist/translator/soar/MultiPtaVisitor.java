@@ -807,8 +807,11 @@ public class MultiPtaVisitor<Object> extends AbstractParseTreeVisitor<Object> im
             return null;
         }
 
-        // Handle symbolic variable references
-        if (val.startsWith("<") && val.endsWith(">")) {
+        // Handle symbolic variable references.
+        // A LONE <x> only: an expression whose last operand happens to be a variable
+        // ("<wc> + <bt>") also starts with '<' and ends with '>', and reading that as a
+        // variable reference silently drops the write. Arithmetic always contains a space.
+        if (val.matches("<[^<>\\s]+>")) {
             if (currentRule.contextMap.containsKey(val) && !currentRule.getContext(val).equals(variable)) {
                 String resolved = currentRule.getContext(val);
                 currentRule.addAttrValue(variable, resolved);

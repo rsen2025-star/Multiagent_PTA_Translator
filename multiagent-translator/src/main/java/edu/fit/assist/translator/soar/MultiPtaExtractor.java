@@ -420,15 +420,16 @@ public class MultiPtaExtractor {
     // Bounds map 1:1 to the SOAR threshold — no processing-delay "+1", and a clockless
     // agent stays clockless (2026-07-27 directive: translate SOAR as written).
     //
-    // Two clock kinds, told apart by how the moves touch the counter:
-    //   RESETTING    — a dedicated tick operator does the +1; each real move RESETS the
-    //                  counter (train-count). Measures time BETWEEN moves. One clock,
-    //                  guard "clock >= bound", reset on every move.
-    //   ACCUMULATING — the move ITSELF does the +1 as a side effect and only a start
-    //                  edge sets it back to a literal (wall-clock). Measures TOTAL time
-    //                  against a threshold. T6: this ONE counter becomes TWO clocks —
-    //                    its VALUE  -> the clock itself (deadline race; strict guards
-    //                                  relaxed, < to <=, digital clocks ban strict), and
+    // Two clock kinds, told apart by WHO RESETS THE COUNTER — not by who ticks it:
+    //   RESETTING    — some move both TESTS the counter and puts it back (train-count:
+    //                  approach reads "count 6", then writes 0). Measures time BETWEEN
+    //                  moves. One clock, guard "clock >= bound", reset on every move.
+    //   ACCUMULATING — no move that reads it ever puts it back; a start edge may still
+    //                  give it a literal 0 (wall-clock at initialize), which is a start
+    //                  VALUE, not a reset. Measures TOTAL time against a threshold.
+    //                  T6: this ONE counter becomes TWO clocks —
+    //                    its VALUE  -> the clock itself (the guard is kept exactly as the
+    //                                  rules wrote it, strict included -> games engine), and
     //                    its +1 EVENT -> a PACING clock (guard >=1 / bound 1 / reset on
     //                                  each increment): one SOAR decision cycle = one
     //                                  time unit, straight from SOAR's own semantics.
@@ -443,27 +444,63 @@ public class MultiPtaExtractor {
         for (Map.Entry<String, Role> e : roles.entrySet()) {
             if (e.getValue() == Role.CLOCK) clocks.add(e.getKey());
         }
-        // kind: incremented inside a real move (an apply that changes other things too)
-        // and never by a dedicated tick => accumulating.
+        // kind: RESETTING if a move both READS the clock and puts it back — that move is
+        // measuring the gap since the last one. Everything else ACCUMULATES. Asked this way
+        // round the question is about the RESET, not about the tick, so one tick operator
+        // may legally advance several clocks that are classified differently.
         for (String c : clocks) {
-            boolean dedicatedTick = false, incrementedInMove = false;
-            for (Rule apply : allApplies()) {
-                String val = apply.valueMap.get(c);
-                if (val != null && isSelfArithmetic(c, val)) {
-                    if (apply.valueMap.size() == 1) dedicatedTick = true;
-                    else incrementedInMove = true;
-                }
-            }
-            if (incrementedInMove && !dedicatedTick) accumulatingClocks.add(c);
+            if (!isResetByItsReaders(c)) accumulatingClocks.add(c);
         }
-        // T6: spawn the pacing clock beside the accumulating clock(s).
-        if (!accumulatingClocks.isEmpty()) {
+        // T6: spawn the pacing clock beside the accumulating clock(s) — but only when no
+        // resetting clock exists. A resetting clock ALREADY measures the gap between moves,
+        // which is the whole job of the pacing clock; spawning t1 anyway would invent a
+        // second one measuring the same thing.
+        if (!accumulatingClocks.isEmpty() && accumulatingClocks.size() == clocks.size()) {
             pacingClock = uniqueClockName("t1");
             clocks.add(pacingClock);
         }
         model.clocks.addAll(clocks);
         model.pacingClock = pacingClock;
         model.accumulatingClocks.addAll(accumulatingClocks);
+    }
+
+    /**
+     * What: true if some ONE operator both tests this clock in a propose and writes it a
+     *       non-incrementing value in an apply.
+     * Why:  that pairing is what a reset actually is — the move reads how long it has been,
+     *       acts, and starts the count again. Both halves are required: an initialize that
+     *       zeroes a clock it never tests is giving it a START VALUE, not resetting it, and
+     *       a move that reads the clock without writing it back (an examine racing a
+     *       deadline) leaves it accumulating.
+     * PTA:  X (resetting vs accumulating picks the bound and the invariant form).
+     */
+    private boolean isResetByItsReaders(String clock) {
+        for (Map.Entry<String, List<Rule>> e : appliesByOp.entrySet()) {
+            boolean putsBack = false;
+            for (Rule apply : e.getValue()) {
+                String val = apply.valueMap.get(clock);
+                if (val != null && !isSelfArithmetic(clock, val)) { putsBack = true; break; }
+            }
+            if (!putsBack) continue;
+            List<Rule> proposes = proposesByOp.get(e.getKey());
+            if (proposes == null) continue;
+            for (Rule propose : proposes) {
+                if (testsVar(propose, clock)) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * What: true if any of a rule's guards is a test OF this variable.
+     * Why:  a guard reads "var op value", so the quantity being tested is the first token.
+     * PTA:  helper for X (does this move read the clock it writes?).
+     */
+    private boolean testsVar(Rule r, String var) {
+        for (String g : r.guards) {
+            if (g.trim().split("\\s+")[0].equals(var)) return true;
+        }
+        return false;
     }
 
     /**
@@ -489,6 +526,37 @@ public class MultiPtaExtractor {
         if (var == null || value == null) return false;
         String[] t = value.trim().split("\\s+");
         return t.length == 3 && ARITH_OPS.contains(t[1]) && (t[0].equals(var) || t[2].equals(var));
+    }
+
+    /**
+     * What: the amount a self-arithmetic value advances by ("wc + 1" -> "1"), else null.
+     * Why:  how far a clock jumps per move IS how long that move takes. The SOAR states it;
+     *       assuming 1 would silently override what the model says.
+     * PTA:  inv + enab (the pacing bound on this edge).
+     */
+    private String selfArithmeticAmount(String var, String value) {
+        if (!isSelfArithmetic(var, value)) return null;
+        String[] t = value.trim().split("\\s+");
+        return t[0].equals(var) ? t[2] : t[0];
+    }
+
+    /**
+     * What: the pacing bound for one edge — the increment amount, if PRISM can compare a clock
+     *       against it; otherwise 1 with a warning.
+     * Why:  a clock may only be tested against a constant. An amount that is itself mutable state
+     *       would emit "t1 <= some_variable", a diagonal constraint the digital-clocks method
+     *       rejects and digitisation soundness depends on not having.
+     * PTA:  inv + enab (the pacing bound on this edge).
+     */
+    private String pacingBoundFrom(String clock, String value, String action) {
+        String amount = selfArithmeticAmount(clock, value);
+        if (amount == null) return "1";
+        if (amount.matches("-?\\d+(\\.\\d+)?")) return amount;          // a literal duration
+        if (roles.get(amount) == Role.CONST) return amount;            // an input constant
+        model.warnings.add("pacing bound '" + amount + "' on " + action
+                + " is neither a number nor a constant; a clock cannot be compared against"
+                + " mutable state, so one decision cycle was used instead");
+        return "1";
     }
 
     /**
@@ -699,10 +767,12 @@ public class MultiPtaExtractor {
             String val = e.getValue();
             if (clocks.contains(var)) {
                 if (isSelfArithmetic(var, val)) {
-                    // the +1 on an accumulating clock is TIME PASSING, not a reset: the
-                    // clock keeps running; the pacing clock marks the cycle (>=1, then 0).
+                    // the +N on an accumulating clock is TIME PASSING, not a reset: the clock
+                    // keeps running; the pacing clock marks the cycle (>=N, then 0). N is what
+                    // the SOAR says the move costs — 1 (one decision cycle) unless it says more.
                     if (pacingClock != null) {
-                        enab.add(pacingClock + " >= 1");
+                        t.pacingBound = pacingBoundFrom(var, val, t.action);
+                        enab.add(pacingClock + " >= " + t.pacingBound);
                         t.clockUpdates.put(pacingClock, "0");
                     }
                 } else {
@@ -984,8 +1054,8 @@ public class MultiPtaExtractor {
      * What: keeps every real firing condition, dropping only SOAR's operator/init bookkeeping.
      * Why:  a state test is a guard no matter which variable it names — singling one out as
      *       "the location" and deleting it lost the test entirely when the edge was dropped.
-     * PTA:  enab (the edge guards). Clock checks are rewritten by kind (relax accumulating,
-     *       ">= bound" for a resetting tick).
+     * PTA:  enab (the edge guards). An accumulating clock's check is kept verbatim (strict stays
+     *       strict — the operator is the model's, not ours); a resetting tick becomes ">= bound".
      */
     private void addEnabGuards(LinkedHashSet<String> out, Rule rule) {
         if (rule == null) return;
@@ -994,7 +1064,7 @@ public class MultiPtaExtractor {
             if (isOperatorBookkeeping(var)) continue;   // chosen-operator / superstate marker
             if (clocks.contains(var)) {
                 if (accumulatingClocks.contains(var)) {
-                    out.add(relaxStrict(g));   // the deadline race; strict is banned on clocks
+                    out.add(g);   // as the rules wrote it; the invariant supplies the bound
                 } else {
                     String bound = model.clockBounds.get(var);
                     if (bound != null) out.add(var + " >= " + bound); // "reached the count"
@@ -1003,20 +1073,6 @@ public class MultiPtaExtractor {
             }
             out.add(g);
         }
-    }
-
-    /**
-     * What: turns a strict clock comparison into its non-strict form (< to <=, > to >=).
-     * Why:  PRISM's digital clocks reject strict on clocks; relaxing is sound and keeps the deadline race.
-     * PTA:  enab (an accumulating-clock guard).
-     */
-    private String relaxStrict(String guard) {
-        String[] tok = guard.trim().split("\\s+");
-        if (tok.length == 3) {
-            if ("<".equals(tok[1])) return tok[0] + " <= " + tok[2];
-            if (">".equals(tok[1])) return tok[0] + " >= " + tok[2];
-        }
-        return guard;
     }
 
     // ===================================================================================

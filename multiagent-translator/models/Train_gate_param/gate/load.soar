@@ -1,0 +1,5 @@
+echo "\nLoading gate agent"
+
+# One load file = one agent. Source all of the gate's rule files here
+# (split them into propose/apply files if you like — they still form one agent).
+source "gate.soar"
