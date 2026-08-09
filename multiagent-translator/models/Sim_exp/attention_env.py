@@ -25,21 +25,28 @@ costs a tick anyway. The deadline is not consumed while waiting; PRISM states th
 same thing as the invariant `state_name=0 => state_wall_clock<=0`.
 
 Message lifetime differs by kind:
-    ^signal       one-shot   — destroyed after one cycle, like Train_gate's
+    ^signal       one-shot   — delivered once, then dropped
     ^attacker-id  persistent — mission re-reads it on every one of the 20 examines
 
 Nothing domain-specific is hardcoded beyond the experiment knobs
 (deadline, use_box, box_accuracy) and the crowd size N=20.
 
-Reference bridge: D:\\Rajarshi\\Courses\\MBSE\\Multi-agent Train_gate\\env\\environment.py
-Ours keeps its scheduling and adds typed/nested WMEs plus a broadcast +
-point-to-point topology.
+Topology: broadcast (environment -> scenario + mission) plus point-to-point
+(scenario -> mission), over typed/nested WMEs.
 """
 
 import os, sys, re
 
-# Reuse the Train_gate SOAR SML runtime (no copy).
-_SOAR_BIN = r"D:\Rajarshi\Courses\MBSE\Multi-agent Train_gate\SOAR\bin"
+# SOAR SML runtime. Not shipped with this repo — point SOAR_BIN at a local install
+# containing Python_sml_ClientInterface and its DLLs. The default is a convenience
+# for the machine this was developed on; override it anywhere else.
+_SOAR_BIN = os.environ.get(
+    "SOAR_BIN", r"D:\Rajarshi\Courses\MBSE\Multi-agent Train_gate\SOAR\bin")
+if not os.path.isdir(_SOAR_BIN):
+    raise RuntimeError(
+        "SOAR SML runtime not found at %r.\n"
+        "Set the SOAR_BIN environment variable to a directory containing "
+        "Python_sml_ClientInterface (Python 3.12 build) and its DLLs." % _SOAR_BIN)
 os.add_dll_directory(_SOAR_BIN)
 sys.path.insert(0, _SOAR_BIN)
 import Python_sml_ClientInterface as sml  # noqa: E402

@@ -19,9 +19,12 @@ src/main/java/edu/fit/assist/translator/
   gen/    Soar{Lexer,Parser,Visitor,BaseVisitor,Listener,BaseListener}.java  ANTLR-generated parser
 src/main/antlr4/edu/fit/assist/soar/Soar.g4   ⚠️ STALE — see the warning below. Do NOT regenerate.
 models/Train_gate/                 sample input (train + controller + gate agents)
+models/Train_gate_param/           the same three agents, clock bounds left as PRISM
+                                   `const int travel_delay / mechanical_delay`
 models/ICS_SOAR-attention-3agent/  the certified 3-agent model + its property battery
 models/Sim_exp/                    live SOAR Monte-Carlo harness (Python 3.12)
 pom.xml              Java 17; deps: antlr4-runtime, jsoar-core/tcl, slf4j
+cp.txt               generated classpath dump; absolute .m2 paths, machine-specific
 ```
 
 ## ⚠️ Never regenerate `gen/` from `Soar.g4`
@@ -35,10 +38,16 @@ the source of truth — treat the `.g4` as read-only reference.
 ```
 mvn -q compile
 mvn -q exec:java -Dexec.mainClass=edu.fit.assist.translator.soar.main -Dexec.args="models/Train_gate/load.soar"
-# or:
-java -cp target/classes:<deps> edu.fit.assist.translator.soar.main models/Train_gate/load.soar
 ```
 Output is written next to the load.soar as `models/Train_gate/train_gate_translated.pm`.
+
+To run without the exec plugin, regenerate the classpath first — `cp.txt` holds absolute
+`.m2` paths and is only valid on the machine that wrote it:
+```
+mvn -q dependency:build-classpath -Dmdep.outputFile=cp.txt
+java -cp "target/classes;$(cat cp.txt)" edu.fit.assist.translator.soar.main models/Train_gate/load.soar
+```
+The separator is `;` on Windows and `:` on POSIX.
 
 ## Verifying a change
 
@@ -90,6 +99,51 @@ Each agent prints its PTA 8-tuple before the `.pm` is written:
 - **`*`** in a source tuple means that component is unconstrained — the rule tests nothing about
   it, so the edge fires from every value of it.
 - An agent with no word-valued variables prints `L : NONE (all state is data)`.
+  A clockless agent prints `X : NONE (clockless agent)`.
+
+### One action can print several arrows
+
+The print is a *projection*, not the stored edge. `MultiPtaModel` holds **one** `PtaTransition`
+per action; `appendEdges` expands it over the reachable state space at display time. The emitter
+does not: it iterates `model.transitions` directly, so each action stays one PRISM command.
+
+`reachableLocations` walks the edges from `l-bar` and keeps the control assignments that actually
+occur. For each action it collects every reachable assignment no guard contradicts, then groups
+those sources **by target** — one arrow per distinct target:
+
+```
+    [start-mission]
+        {nil, nil, nil} --> {yes, nil, nil}
+        guards  = {state_name = environment, state_io_sys_start_mission > 0}
+        {nil, yes, nil} --> {yes, yes, nil}
+        guards  = {state_name = environment, state_io_sys_start_mission > 0}
+```
+
+Two arrows because the apply writes only `state_start_mission`; the untouched components carry
+over, so the two sources land in different places. Collapsing them onto one arrow would assert a
+transition that does not exist. Guards repeat because they are printed inside the per-target loop.
+
+Guards naming a location variable do **not** appear in `guards = {...}` — they are already shown
+by the arrow's source. The two above are the propose rule's remaining data tests.
+
+### Probabilistic edges and warnings
+
+A T3 fan prints its branches instead of a single target:
+
+```
+        {scenario, nil} -->
+        guards  = {...}
+        prob    = box-accuracy : {scenario, nil} {state_io_scenario_attacker_id = 0}
+                + (1.0 - box-accuracy) / 19 : ... {state_io_scenario_attacker_id = 1}
+```
+
+Anything the extractor could not resolve is listed at the end, and does not stop emission:
+
+```
+  ! validation (2):
+     - state var 'state_phase' dropped: domain [nil] has nothing to distinguish
+     - action 'tick' is proposed but never applied: no transition built
+```
 
 ## Notes
 - The input `load.soar` must **source** several agent folders (that's how the loader detects

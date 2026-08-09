@@ -16,10 +16,15 @@ diff the two tables.
 - `sweep_plot.py`    — deadline x accuracy sweep → PNG + CSV.
 
 ## Requirements
-- Python **3.12** (matches the prebuilt SML `.pyd`).
-- Reuses the Train_gate SOAR runtime by absolute path:
-  `D:\Rajarshi\Courses\MBSE\Multi-agent Train_gate\SOAR\bin` (see `_SOAR_BIN` in
-  `attention_env.py`).
+- Python **3.12** — must match the prebuilt SML `.pyd`.
+- A **SOAR SML install** containing `Python_sml_ClientInterface` and its DLLs. None ships with
+  this repo. Point the `SOAR_BIN` environment variable at it:
+  ```
+  $env:SOAR_BIN = "C:\path\to\SOAR\bin"    # PowerShell
+  export SOAR_BIN=/path/to/SOAR/bin        # POSIX
+  ```
+  `attention_env.py` reads `SOAR_BIN`, falls back to a development default, and raises
+  `RuntimeError` naming the missing path if neither resolves.
 
 ## Run
 ```
@@ -35,12 +40,33 @@ python sweep_plot.py  --runs 500 --I 1 --out soar_sweep.png
 | `--use-box` | 1 | 0 = no ATR cue |
 | `--runs` | 2000 / 1000 | episodes per point |
 
+## Outputs
+
+`sweep_plot.py` is the only script here that writes files. It writes `--out` (default
+`soar_sweep.png`) plus the same stem as `.csv`, into the working directory. Schema:
+
+```
+box_accuracy,deadline,inspection_time,use_box,runs,soar_rate
+```
+
+| file | use_box | rows |
+|---|---|---|
+| `soar_sweep.{png,csv}`     | 0 | 126 |
+| `pic/soar_sweep.{png,csv}` | 1 | 126 |
+
+⚠️ **`soar_only.*`, `soar_vs_prism.*`, and `pic/soar_vs_prism_I2_B{0,1}.*` are not produced by
+anything in this folder.** They carry two extra columns, `pmin,pmax`, which no script here
+computes — `sweep_plot.py` emits `soar_rate` only. They predate the SOAR-only rewrite
+(`soar_vs_prism.csv` is dated 2026-07-30, this README 2026-08-07) and their generator is not in
+this repo. Treat them as unreproducible archive data. Do not cite their `pmin/pmax` as this
+harness's output; to compare against PRISM, run PRISM yourself and diff the CSVs.
+
+Note `soar_only.csv` has the `pmin,pmax` schema too, despite the name — it is in the same
+orphan group.
+
 ---
 
-## Scheduling — the Train_gate concept
-
-Same design as `Multi-agent Train_gate\env\environment.py` and
-`models/Sim_train_gate/`:
+## Scheduling — deliver after, one cycle per hop
 
 ```
    cycle N   +--------------------------------+
@@ -88,7 +114,7 @@ match (`waitsnc` does not cover an operator-no-change).
 ### Message lifetime differs by kind
 
 ```
-  ^signal       one-shot   ▁▇▁▁▁▁▁▁   destroyed after one cycle, like Train_gate's
+  ^signal       one-shot   ▁▇▁▁▁▁▁▁   delivered once, then dropped
   ^attacker-id  persistent ▁▁▇▇▇▇▇▇   re-read on every one of the 20 examines
 ```
 
@@ -129,9 +155,12 @@ random stream, not behaviour: `RunAllAgents` changes how many decisions precede
 scenario's draw, so a given seed maps to a different sample of the same
 distribution.)
 
-Contrast Train_gate, where the same one-cycle-per-hop cost *does* move the answer
-(`safe <=> M <= T - 3`) because safety there is a race between two independent
-clocks. See `models/Sim_train_gate/`.
+The hop cost is only free because it precedes `wall-clock = 0`. Where safety is a race between
+two independent clocks it is not free — that is the `models/Train_gate/` shape, whose safety
+property (`"unsafe_train_in_gate_not_down"` in
+`models/Train_gate_param/train_gate_param_translated.props`) turns on the gap between the
+train's `travel_delay` and the gate's `mechanical_delay`. No simulation of that model ships
+here; only the translator input does.
 
 ## Note on I >= 2 — a semantics difference, not a bug
 
@@ -147,8 +176,9 @@ the PTA reading.
 
 ## Reading it honestly
 
-- **Monte Carlo is required here**, unlike `models/Sim_train_gate` — the scenario
-  agent makes a genuine probabilistic choice, so one run per cell is not the answer.
+- **Monte Carlo is required here.** The scenario agent makes a genuine probabilistic
+  choice (softmax over 20 candidates), so one run per grid point is not the answer.
+  A deterministic model would need only one.
 - **Seeds are reused across grid points** (`seed = run index` in every cell), so
   neighbouring points are correlated and the curves look smoother than independent
   sampling would give.

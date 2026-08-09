@@ -1,6 +1,5 @@
 // Certification battery for the TRANSLATED model (ics_soar-attention-3agent_translated.pm).
-// Mirrors attention_crafted.props, with two differences that are properties of the
-// translation, not of the maths:
+// Two things here are properties of the translation, not of the maths:
 //   - the endings are written as plain state tests, not labels. The translator does not
 //     invent label names; naming an outcome is the job of whoever asks the question, and
 //     that is this file. state_action codes its values in first-seen order:
