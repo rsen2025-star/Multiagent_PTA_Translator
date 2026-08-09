@@ -27,12 +27,7 @@ pom.xml              Java 17; deps: antlr4-runtime, jsoar-core/tcl, slf4j
 cp.txt               generated classpath dump; absolute .m2 paths, machine-specific
 ```
 
-## ⚠️ Never regenerate `gen/` from `Soar.g4`
 
-The checked-in `.g4` is **stale**: the real parser was generated from a grammar that no longer
-exists, and differs from what this `.g4` produces (`MultiPtaVisitor` relies on `ctx.value(1)`,
-which the on-disk grammar cannot emit). Regenerating breaks the build. The `gen/*.java` files are
-the source of truth — treat the `.g4` as read-only reference.
 
 ## Build & run
 ```
