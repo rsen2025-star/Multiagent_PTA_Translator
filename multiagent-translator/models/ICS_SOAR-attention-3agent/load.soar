@@ -5,6 +5,7 @@
 
 echo "\nLoading ICS attention 3-agent model"
 
-source "environment/load.soar"
-source "scenario/load.soar"
-source "mission/load.soar"
+
+source "environment/load.soar"   # @agent environment
+source "scenario/load.soar"      # @agent scenario
+source "mission/load.soar"       # @agent mission

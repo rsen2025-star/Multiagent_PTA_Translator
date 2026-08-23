@@ -8,26 +8,28 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-// A load.soar file lists other .soar files. It can mean one of two things:
-//   1. a LIST of AGENTS       — every file it lists is itself a load.soar (one per agent);
-//                              we build one PTA model per agent, fully isolated.
-//   2. ONE agent's own files — it lists at least one plain rule file (e.g. propose in one
-//                              file, apply in another); we load the whole thing as one model
-//                              so the two halves rejoin by operator name.
-// listsAgents() tells the two apart; extractModels() is the single entry point.
+// on a multi-file model is now a hard error, never a fallback.
 public class MultiPtaLoader {
 
-    // Matches a line like:  source "train/train.soar"  and grabs the file path inside it.
+    // Any include line:  source "train/load.soar"   — used only to tell a multi-file model from a
+    // single plain rule file. It answers "does this file include others?", never "who is an agent?".
     private static final Pattern SOURCE_LINE = Pattern.compile("^\\s*source\\s+\"?([^\"\\s]+)\"?");
 
-    /** Is this file a list of other .soar files? (yes = it points to agents, it is not an agent itself.) */
+    // One agent per marked include:  source "train/load.soar"   # @agent train
+    private static final Pattern AGENT_LINE = Pattern.compile(
+            "^\\s*source\\s+\"?([^\"\\s]+)\"?\\s*#+\\s*@agent\\s+(\\S+)");
+
+    // Standalone marker: this whole load.soar is ONE agent.  # @agent simplified
+    private static final Pattern SELF_AGENT = Pattern.compile("^\\s*#+\\s*@agent\\s+(\\S+)\\s*$");
+
+    /** Does this file include other .soar files? (i.e. is it a multi-file model rather than one
+     *  plain rule file). Says nothing about agents — {@link #roster} answers that. */
     public static boolean sourcesSoarFiles(String path) {
         try {
             for (String line : Files.readAllLines(Paths.get(path))) {
@@ -37,89 +39,93 @@ public class MultiPtaLoader {
                 }
             }
         } catch (IOException e) {
-            // Can't open the file? Just say "no" and let the caller treat it as a single agent.
+            // Can't open the file? Just say "no" and let the caller treat it as a single file.
         }
         return false;
     }
 
-    /** Does this load.soar list several agents, or one agent split across files?
-     *  Several AGENTS: every file it sources is itself a load.soar (each = one agent's load file).
-     *  ONE agent: it sources at least one plain rule file (e.g. propose + apply in separate files).
-     *  Telling these apart is what stops us from splitting one agent's propose/apply into two. */
-    public static boolean listsAgents(String path) throws IOException {
-        List<String> sourced = sourcedFiles(path);
-        if (sourced.isEmpty()) {
-            return false;
-        }
-        for (String file : sourced) {
-            if (!new File(file).getName().equalsIgnoreCase("load.soar")) {
-                return false; // a plain rule file -> this is one agent's own list of files
-            }
-        }
-        return true;
-    }
-
-    /** Get the list of .soar files this load file points to, as full paths (found in the same folder). */
-    public static List<String> sourcedFiles(String loadPath) throws IOException {
+    /** The declared agent roster: agent name -> the .soar file that agent is loaded from.
+     *  Read from THIS file only; children are never inspected. Empty means nothing was declared.
+     *
+     *  Two passes, not one, so a marker written on its own line ABOVE a source line cannot be
+     *  mistaken for the whole-file form. Marked includes always win; the standalone form is only
+     *  consulted when there are none. */
+    public static Map<String, String> roster(String loadPath) throws IOException {
+        List<String> lines = Files.readAllLines(Paths.get(loadPath));
         File dir = new File(loadPath).getAbsoluteFile().getParentFile();
-        List<String> files = new ArrayList<>();
-        for (String line : Files.readAllLines(Paths.get(loadPath))) {
-            Matcher m = SOURCE_LINE.matcher(line);
-            if (m.find() && m.group(1).endsWith(".soar")) {
-                files.add(new File(dir, m.group(1)).getPath());
+        Map<String, String> roster = new LinkedHashMap<>();
+
+        // Pass 1 — the multi-agent form: one agent per marked include, in file order.
+        for (String line : lines) {
+            Matcher m = AGENT_LINE.matcher(line);
+            if (m.find()) {
+                declare(roster, m.group(2), new File(dir, m.group(1)).getPath(), loadPath);
             }
         }
-        return files;
+        if (!roster.isEmpty()) {
+            return roster;
+        }
+
+        // Pass 2 — the single-agent form: the whole file is one agent, JSoar sources all of it.
+        for (String line : lines) {
+            Matcher m = SELF_AGENT.matcher(line);
+            if (m.find()) {
+                declare(roster, m.group(1), loadPath, loadPath);
+                break;
+            }
+        }
+        return roster;
     }
 
-    /** The single entry point for a load.soar. If it lists several agents, build one model each
-     *  (isolated). If it is one agent split across files, load the whole thing as ONE model so the
-     *  propose and apply halves rejoin by operator name. */
+    /** Add one roster entry. A repeated name would drop a module without a trace, so it is fatal. */
+    private static void declare(Map<String, String> roster, String name, String path, String loadPath)
+            throws IOException {
+        if (roster.put(name, path) != null) {
+            throw new IOException("Duplicate @agent name '" + name + "' in " + loadPath
+                    + " — names must be unique or a module is silently lost.");
+        }
+    }
+
+    /** Build one PTA model per declared agent, in roster order (LinkedHashMap keeps the PRISM
+     *  module order stable, which is what keeps the output hash reproducible).
+     *
+     *  Every declared agent MUST produce a model: the roster is a statement of intent, so a bad
+     *  path or an agent with no operators is an error, not something to skip past. A missing
+     *  module changes the composed semantics, and that must never happen quietly. */
     public static Map<String, MultiPtaModel> extractModels(String path) throws IOException {
-        if (listsAgents(path)) {
-            return extractPerAgent(path);
+        Map<String, String> roster = roster(path);
+        if (roster.isEmpty()) {
+            throw new IOException(
+                    "No @agent markers in " + path + "\n"
+                  + "  The outermost load.soar must declare its agents. Either mark each include:\n"
+                  + "      source \"mission/load.soar\"   # @agent mission\n"
+                  + "  or, if the whole file is a single agent, add one standalone line:\n"
+                  + "      # @agent <name>");
         }
-        // One agent whose rules live in several files: hand the whole load.soar to JSoar, which
-        // sources them all into one kernel, so nothing is split.
-        Map<String, MultiPtaModel> models = new LinkedHashMap<>();
-        String agent = agentName(path);
-        MultiPtaModel model;
-        try {
-            model = extractOne(path);
-        } catch (Exception e) {
-            System.out.println("  (skipped " + agent + " — failed to load: " + e.getMessage() + ")");
-            return models;
-        }
-        if (model == null) {
-            System.out.println("  (skipped " + agent + " — no operators, not a PTA agent)");
-            return models;
-        }
-        models.put(agent, model);
-        return models;
-    }
 
-    /** Build one PTA model for each agent in the list. Skip files that aren't real agents (like settings.soar). */
-    public static Map<String, MultiPtaModel> extractPerAgent(String loadPath) throws IOException {
         Map<String, MultiPtaModel> models = new LinkedHashMap<>();
-        for (String file : sourcedFiles(loadPath)) {
-            String agent = agentName(file);
+        for (Map.Entry<String, String> entry : roster.entrySet()) {
+            String agent = entry.getKey();
+            String file = entry.getValue();
             MultiPtaModel model;
             try {
                 model = extractOne(file);
             } catch (Exception e) {
-                System.out.println("  (skipped " + agent + " — failed to load: " + e.getMessage() + ")");
-                continue;
+                throw new IOException("Declared agent '" + agent + "' (" + file
+                        + ") failed to load: " + e.getMessage(), e);
             }
             if (model == null) {
-                System.out.println("  (skipped " + agent + " — no operators, not a PTA agent)");
-                continue;
+                throw new IOException("Declared agent '" + agent + "' (" + file
+                        + ") has no operators, so it is not a PTA agent — remove its @agent marker"
+                        + " if it is a plain include (like settings.soar).");
             }
             models.put(agent, model);
         }
         return models;
     }
 
-    /** Turn ONE agent file into a PTA model. Returns null if the file isn't a real agent. */
+    /** Turn ONE agent's entry file into a PTA model. JSoar resolves that agent's own `source` tree,
+     *  so propose and apply rejoin by operator name. Returns null if the file holds no real agent. */
     private static MultiPtaModel extractOne(String soarFile) throws Exception {
         String soarText = Input.getSoarRules(soarFile);
 
@@ -141,19 +147,5 @@ public class MultiPtaLoader {
             return null; // has rules but no operators (no real moves) -> not a PTA agent
         }
         return model;
-    }
-
-    /** Work out the agent's name from its file path. If the file is called load.soar, use its
-     *  folder name (train/load.soar -> "train"). Otherwise use the file name without .soar
-     *  (train.soar -> "train"). */
-    private static String agentName(String path) {
-        File f = new File(path);
-        String name = f.getName();
-        int dot = name.lastIndexOf('.');
-        String stem = (dot > 0) ? name.substring(0, dot) : name;
-        if (stem.equalsIgnoreCase("load") && f.getParentFile() != null) {
-            return f.getParentFile().getName();
-        }
-        return stem;
     }
 }

@@ -1,5 +1,7 @@
 echo "\nLoading Train_gate agents"
 
-source "train/load.soar"
-source "controller/load.soar"
-source "gate/load.soar"
+# Agent roster for the SOAR->PRISM translator. Soar ignores these comments; they exist because
+# `source` cannot create an agent, so who the agents are has to be stated, not guessed.
+source "train/load.soar"        # @agent train
+source "controller/load.soar"   # @agent controller
+source "gate/load.soar"         # @agent gate
