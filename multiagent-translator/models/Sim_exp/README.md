@@ -54,15 +54,11 @@ box_accuracy,deadline,inspection_time,use_box,runs,soar_rate
 | `soar_sweep.{png,csv}`     | 0 | 126 |
 | `pic/soar_sweep.{png,csv}` | 1 | 126 |
 
-⚠️ **`soar_only.*`, `soar_vs_prism.*`, and `pic/soar_vs_prism_I2_B{0,1}.*` are not produced by
+⚠️ **`pic/soar_vs_prism_I2_B{0,1}.*` are not produced by
 anything in this folder.** They carry two extra columns, `pmin,pmax`, which no script here
 computes — `sweep_plot.py` emits `soar_rate` only. They predate the SOAR-only rewrite
-(`soar_vs_prism.csv` is dated 2026-07-30, this README 2026-08-07) and their generator is not in
-this repo. Treat them as unreproducible archive data. Do not cite their `pmin/pmax` as this
+and their generator is not in this repo. Treat them as unreproducible archive data. Do not cite their `pmin/pmax` as this
 harness's output; to compare against PRISM, run PRISM yourself and diff the CSVs.
-
-Note `soar_only.csv` has the `pmin,pmax` schema too, despite the name — it is in the same
-orphan group.
 
 ---
 

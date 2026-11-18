@@ -103,7 +103,7 @@ def main():
                 color=color, ms=5, label=f"b={b:.2f}")
 
     ax.set_xlabel("deadline")
-    ax.set_ylabel("measured tag-rate")
+    ax.set_ylabel("Probability of tagging the attacker")
     ax.set_title(f"SOAR simulation — measured tag-rate\n"
                  f"use_box={args.use_box}, I={args.I}, {args.runs} runs per point")
     ax.set_xlim(args.dmin, args.dmax + 1)

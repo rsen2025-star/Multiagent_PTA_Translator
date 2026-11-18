@@ -25,7 +25,7 @@ sp {mission*propose*examine-box
                ^tagged-attacker 0
                ^current-person-id <pid> < 20
                ^current-person-boxed 1
-               ^wall-clock <wc> < <deadline>
+               ^wall-clock <wc> <= <deadline>
                ^inspect-clock { <ic> >= <it> }
                ^io.input-link.scenario.deadline <deadline>
                ^io.input-link.scenario.inspection-time <it>)
@@ -41,7 +41,7 @@ sp {mission*propose*examine
                ^tagged-attacker 0
                ^current-person-id <pid> < 20
                ^current-person-boxed 0
-               ^wall-clock <wc> < <deadline>
+               ^wall-clock <wc> <= <deadline>
                ^inspect-clock { <ic> >= <it> }
                ^io.input-link.scenario.deadline <deadline>
                ^io.input-link.scenario.inspection-time <it>)
@@ -60,7 +60,7 @@ sp {mission*propose*tick
                ^action Waiting
                ^tagged-attacker 0
                ^current-person-id <pid> < 20
-               ^wall-clock <wc> < <deadline>
+               ^wall-clock <wc> <= <deadline>
                ^inspect-clock { <ic> < <it> }
                ^io.input-link.scenario.deadline <deadline>
                ^io.input-link.scenario.inspection-time <it>)
