@@ -42,8 +42,15 @@ import os
 import sys
 import re
 
-# Reuse the Train_gate SOAR SML runtime (no copy), same as models/Sim_exp.
-_SOAR_BIN = r"D:\Rajarshi\Courses\MBSE\Multi-agent Train_gate\SOAR\bin"
+# SOAR SML runtime, same as models/Sim_exp. Not shipped with this repo — point SOAR_BIN
+# at a local install containing Python_sml_ClientInterface and its DLLs.
+_SOAR_BIN = os.environ.get(
+    "SOAR_BIN", r"D:\Rajarshi\Courses\MBSE\Multi-agent Train_gate\SOAR\bin")
+if not os.path.isdir(_SOAR_BIN):
+    raise RuntimeError(
+        "SOAR SML runtime not found at %r.\n"
+        "Set the SOAR_BIN environment variable to a directory containing "
+        "Python_sml_ClientInterface (Python 3.12 build) and its DLLs." % _SOAR_BIN)
 os.add_dll_directory(_SOAR_BIN)
 sys.path.insert(0, _SOAR_BIN)
 import Python_sml_ClientInterface as sml  # noqa: E402
